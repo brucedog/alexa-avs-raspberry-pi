@@ -15,6 +15,7 @@ import com.amazon.alexa.avs.config.DeviceConfig;
 import com.amazon.alexa.avs.config.DeviceConfigUtils;
 import com.amazon.alexa.avs.http.AVSClientFactory;
 
+import edu.cmu.sphinx.api.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,6 +106,62 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         setSize(400, 200);
         setVisible(true);
         controller.startHandlingDirectives();
+        setupSpeechRecognitionAndRun();
+    }
+
+    private void setupSpeechRecognitionAndRun()  {
+        try {
+            Configuration configuration = new Configuration();
+
+            configuration.setAcousticModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us");
+            configuration.setDictionaryPath("resource:/edu/cmu/sphinx/models/en-us/cmudict-en-us.dict");
+            configuration.setLanguageModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us.lm.bin");
+
+            LiveSpeechRecognizerExtention jsgfRecognizer = new LiveSpeechRecognizerExtention(configuration);
+
+            jsgfRecognizer.startRecognition(true);
+            while (true) {
+                System.out.println("Example: exit the program");
+
+                String utterance = jsgfRecognizer.getResult().getHypothesis();
+
+                if(utterance.toLowerCase().contains("alexa")){
+
+                    final RecordingRMSListener rmsListener = this;
+                    controller.recordingStarted();
+
+                    RequestListener requestListener = setupRequestListener();
+
+                    controller.startRecording(rmsListener, requestListener);
+
+                }
+                if (utterance.startsWith("exit"))
+                    break;
+            }
+
+            jsgfRecognizer.stopRecognition();
+
+        } catch (Exception e) {
+            log.error("Error setting up the sphinx speech recog.", e);
+        }
+    }
+
+    private RequestListener setupRequestListener() {
+        return new RequestListener() {
+            @Override
+            public void onRequestSuccess() {
+                finishProcessing();
+            }
+
+            @Override
+            public void onRequestError(Throwable e) {
+                log.error("An error occured creating speech request", e);
+                JOptionPane.showMessageDialog(getContentPane(), e.getMessage(), "Error",
+                        JOptionPane.ERROR_MESSAGE);
+                actionButton.doClick();
+                finishProcessing();
+            }
+        };
     }
 
     private String getAppVersion() {
@@ -184,22 +241,7 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
                 if (actionButton.getText().equals(START_LABEL)) { // if in idle mode
                     actionButton.setText(STOP_LABEL);
 
-                    RequestListener requestListener = new RequestListener() {
-
-                        @Override
-                        public void onRequestSuccess() {
-                            finishProcessing();
-                        }
-
-                        @Override
-                        public void onRequestError(Throwable e) {
-                            log.error("An error occured creating speech request", e);
-                            JOptionPane.showMessageDialog(getContentPane(), e.getMessage(), "Error",
-                                    JOptionPane.ERROR_MESSAGE);
-                            actionButton.doClick();
-                            finishProcessing();
-                        }
-                    };
+                    RequestListener requestListener = setupRequestListener();
 
                     controller.startRecording(rmsListener, requestListener);
                 } else { // else we must already be in listening
@@ -283,7 +325,6 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         actionButton.setEnabled(true);
         visualizer.setIndeterminate(false);
         controller.processingFinished();
-
     }
 
     @Override
