@@ -57,6 +57,7 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
     private final AVSController controller;
     private JButton actionButton;
     private JButton playPauseButton;
+    private JButton autoButton;
     private JTextField tokenTextField;
     private JProgressBar visualizer;
     private Thread autoEndpoint = null; // used to auto-endpoint while listening
@@ -99,6 +100,7 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         addVisualizerField();
         addActionField();
         addPlaybackButtons();
+        addAutoField();
 
         getContentPane().setLayout(new GridLayout(0, 1));
         setTitle(getAppTitle());
@@ -106,47 +108,9 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         setSize(400, 200);
         setVisible(true);
         controller.startHandlingDirectives();
-        setupSpeechRecognitionAndRun();
     }
 
-    private void setupSpeechRecognitionAndRun()  {
-        try {
-            Configuration configuration = new Configuration();
-
-            configuration.setAcousticModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us");
-            configuration.setDictionaryPath("resource:/edu/cmu/sphinx/models/en-us/cmudict-en-us.dict");
-            configuration.setLanguageModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us.lm.bin");
-
-            LiveSpeechRecognizerExtention jsgfRecognizer = new LiveSpeechRecognizerExtention(configuration);
-
-            jsgfRecognizer.startRecognition(true);
-            while (true) {
-                System.out.println("Example: exit the program");
-
-                String utterance = jsgfRecognizer.getResult().getHypothesis();
-
-                if(utterance.toLowerCase().contains("alexa")){
-
-                    final RecordingRMSListener rmsListener = this;
-                    controller.recordingStarted();
-
-                    RequestListener requestListener = setupRequestListener();
-
-                    controller.startRecording(rmsListener, requestListener);
-
-                }
-                if (utterance.startsWith("exit"))
-                    break;
-            }
-
-            jsgfRecognizer.stopRecognition();
-
-        } catch (Exception e) {
-            log.error("Error setting up the sphinx speech recog.", e);
-        }
-    }
-
-    private RequestListener setupRequestListener() {
+    public RequestListener setupRequestListener() {
         return new RequestListener() {
             @Override
             public void onRequestSuccess() {
@@ -229,6 +193,24 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         visualizer = new JProgressBar(0, 100);
         getContentPane().add(visualizer);
     }
+
+    private void addAutoField(){
+        final RecordingRMSListener recordingRMSListener = this;
+        final AVSController  avsController = controller;
+        autoButton = new JButton("Auto Listen");
+        autoButton.setEnabled(true);
+        autoButton.addActionListener(new ActionListener(){
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                Runnable runThis = new BackgroundListen(avsController, (AVSApp) recordingRMSListener);
+                Thread thread = new Thread(runThis);
+                thread.start();
+            }
+        });
+
+        getContentPane().add(autoButton);
+    }
+
 
     private void addActionField() {
         final RecordingRMSListener rmsListener = this;
@@ -401,4 +383,53 @@ public class AVSApp extends JFrame implements ExpectSpeechListener, RecordingRMS
         }
     }
 
+}
+
+class BackgroundListen  implements Runnable {
+
+    private AVSController controller;
+    private AVSApp recordingRMSListener;
+
+    public BackgroundListen(AVSController controller, AVSApp recordingRMSListener) {
+        this.controller = controller;
+        this.recordingRMSListener = recordingRMSListener;
+    }
+
+    public void run() {
+        Configuration configuration = new Configuration();
+
+        configuration.setAcousticModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us");
+        configuration.setDictionaryPath("resource:/edu/cmu/sphinx/models/en-us/cmudict-en-us.dict");
+        configuration.setLanguageModelPath("resource:/edu/cmu/sphinx/models/en-us/en-us.lm.bin");
+
+        try {
+            LiveSpeechRecognizerExtention jsgfRecognizer = new LiveSpeechRecognizerExtention(configuration);
+
+            jsgfRecognizer.startRecognition(true);
+            while (true) {
+
+                String utterance = jsgfRecognizer.getResult().getHypothesis();
+
+                if(utterance.toLowerCase().contains("alexa")){
+
+                    RecordingRMSListener rmsListener = recordingRMSListener;
+                    controller.recordingStarted();
+
+                    RequestListener requestListener = recordingRMSListener.setupRequestListener();
+
+                    controller.startRecording(rmsListener, requestListener);
+
+                } else{
+                    System.out.println("utterance was: " + utterance);
+                }
+                if (utterance.startsWith("exit"))
+                    break;
+            }
+
+            jsgfRecognizer.stopRecognition();
+        } catch (IOException e1) {
+            System.out.println(e1.getMessage());
+            e1.printStackTrace();
+        }
+    }
 }
